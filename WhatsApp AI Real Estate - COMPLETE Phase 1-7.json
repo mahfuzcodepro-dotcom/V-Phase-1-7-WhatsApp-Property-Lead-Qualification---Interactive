@@ -1,0 +1,2037 @@
+{
+  "name": "WhatsApp AI Real Estate - COMPLETE Phase 1-7",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "id": "23fd19af-c3c1-427c-b0b4-e42e45b9c7a4",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        2064
+      ],
+      "webhookId": "e9644fb2-9e7a-4782-88e5-a00b5c2f6264",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "wUMKgesoU2aWRo7x",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.leads) staticData.leads = {};\nif (!staticData.conversations) staticData.conversations = {};\n\nconst root = $json;\nconst value = root?.entry?.[0]?.changes?.[0]?.value ?? root?.body?.entry?.[0]?.changes?.[0]?.value ?? root;\nconst msg = value?.messages?.[0];\nif (!msg) return [{json:{ignore:true, reason:'No WhatsApp message found'}}];\n\nconst phone = msg.from;\nconst phoneNumberId = value?.metadata?.phone_number_id ?? 'YOUR_PHONE_NUMBER_ID';\nconst contactName = value?.contacts?.[0]?.profile?.name ?? 'there';\nconst text = msg?.text?.body ?? '';\nconst buttonId = msg?.interactive?.button_reply?.id ?? '';\nconst listId = msg?.interactive?.list_reply?.id ?? '';\nconst replyId = buttonId || listId || '';\nconst pendingBooking = staticData.pendingViewing?.[phone];\nconst numericSelection = !replyId && /^\\s*[1-5]\\s*$/.test(text);\nconst propertyActionMatch = replyId.match(/^(photos|details|viewing)_(.+)$/i);\nlet property_action = propertyActionMatch ? propertyActionMatch[1].toLowerCase() : '';\nlet property_id = propertyActionMatch ? propertyActionMatch[2] : '';\nlet booking_selection = '';\nif (numericSelection && pendingBooking) {\n  property_action = 'booking_select';\n  property_id = pendingBooking.property_id || '';\n  booking_selection = String(Number(text.trim()));\n}\n\nconst buttonMap = {\n  rent_property:'I want to rent a property',\n  buy_property:'I want to buy a property',\n  sell_property:'I want to sell or rent out my property',\n  see_all_options:'Show me all options',\n  rent_apartment:'I want to rent an apartment',\n  rent_villa:'I want to rent a villa',\n  buy_apartment:'I want to buy an apartment',\n  buy_villa:'I want to buy a villa',\n  property_apartment:'Apartment',\n  property_villa:'Villa',\n  property_townhouse:'Townhouse',\n  property_penthouse:'Penthouse',\n  bed_studio:'Studio',\n  bed_1:'1 Bedroom',\n  bed_2:'2 Bedrooms',\n  bed_3:'3 Bedrooms',\n  timeline_now:'Immediately',\n  timeline_1m:'Within 1 month',\n  timeline_3m:'Within 3 months',\n  timeline_exploring:'Just exploring',\n  human_request:'I want to speak with a person'\n};\n\nconst userText = text.trim() || buttonMap[replyId] || replyId;\n\nlet lead = staticData.leads[phone] || {\n  phone, name: contactName, language:'', intent:'', purpose:'',\n  propertyType:'', bedrooms:'', bathrooms:'', budget:'', currency:'AED',\n  area:'', readyOrOffplan:'', paymentMethod:'', timeline:'',\n  leadScore:0, temperature:'cold', humanRequested:false, aiPaused:false,\n  status:'active', lastUpdated:''\n};\n\nlead.name = contactName || lead.name;\nlead.lastUpdated = new Date().toISOString();\n\nlet history = staticData.conversations[phone] || [];\nhistory.push({role:'user', text:userText, at:new Date().toISOString()});\nhistory = history.slice(-12);\nstaticData.conversations[phone] = history;\n\nreturn [{json:{\n  ignore:false, phone, phone_number_id:phoneNumberId, contact_name:contactName,\n  user_text:userText, reply_id:replyId, property_action, property_id, booking_selection, lead, conversation_history:history\n}}];\n"
+      },
+      "id": "506a123e-a421-47dd-b4b9-6c6bc00c67bf",
+      "name": "Prepare Conversation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        2064
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ `You are the multilingual WhatsApp real-estate sales assistant for a UAE property agency. Respond naturally like a helpful human, not like a form. Detect the customer's language from their latest message and reply in that language. If they switch languages, switch naturally too. Never invent property availability, prices, agents, viewing times, or inventory; property search will be added in the next phase. Your job in this phase is qualification and conversation.\n\nKnown lead profile:\n${JSON.stringify($json.lead)}\n\nRecent conversation:\n${JSON.stringify($json.conversation_history)}\n\nLatest customer message:\n${$json.user_text}\n\nExtract any facts the customer has provided: intent (buy/rent/sell_or_rent_out), purpose (living/investment/both), property type, bedrooms, bathrooms, budget, currency, area/community, ready/off-plan, payment method (cash/mortgage/unknown), timeline. Preserve known values and only change a field when the customer clearly provides a new value.\n\nAsk only for the single most useful missing qualification detail. Do not ask for information the customer already gave. If the customer gives several details in one message, acknowledge them and ask for the next missing detail naturally. If they ask for a human, request human takeover. If they appear ready to transact or request a viewing, flag hot lead/human handoff.\n\nReturn ONLY valid JSON with exactly these keys:\nreply, language, lead_updates, missing_next, human_requested, ai_paused, score_delta, temperature\n\nlead_updates must be an object containing only fields you learned or changed in this turn. score_delta is an integer from 0 to 30. temperature must be one of cold,warm,hot based on the updated profile. Keep reply concise for WhatsApp.` }}",
+        "batching": {}
+      },
+      "id": "536e42f8-951f-45a6-bc7a-651078234d62",
+      "name": "Gemini Qualification Agent",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        816,
+        1808
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "maxOutputTokens": 900,
+          "temperature": 0.2
+        }
+      },
+      "id": "3459971e-5780-4f15-8ba6-e5e663380162",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        2000
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "RjgYBBLvcFr63W9e",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst staticData = $getWorkflowStaticData('global');\nconst input = $('Prepare Conversation').first().json;\nlet raw = $json.text ?? $json.output ?? $json.response ?? $json.data ?? '';\nif (typeof raw !== 'string') raw = JSON.stringify(raw);\nraw = raw.trim().replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/,'').trim();\n\nlet ai;\ntry {\n  ai = JSON.parse(raw);\n} catch (e) {\n  const start = raw.indexOf('{');\n  const end = raw.lastIndexOf('}');\n  if (start >= 0 && end > start) ai = JSON.parse(raw.slice(start,end+1));\n  else throw new Error('Gemini did not return valid JSON: ' + raw);\n}\n\nconst lead = {...input.lead};\nconst updates = ai.lead_updates || {};\nfor (const [k,v] of Object.entries(updates)) {\n  if (v !== undefined && v !== null && String(v).trim() !== '') lead[k] = v;\n}\nconst previousScore = Number(lead.leadScore || 0);\nconst delta = Math.max(0, Math.min(30, Number(ai.score_delta || 0)));\nlead.leadScore = Math.min(100, previousScore + delta);\nif (ai.temperature === 'hot' || lead.leadScore >= 80) lead.temperature = 'hot';\nelse if (ai.temperature === 'warm' || lead.leadScore >= 45) lead.temperature = 'warm';\nelse lead.temperature = 'cold';\n\nlead.humanRequested = Boolean(ai.human_requested || lead.humanRequested);\nlead.aiPaused = Boolean(ai.ai_paused || lead.aiPaused);\nlead.lastUpdated = new Date().toISOString();\nif (lead.humanRequested) lead.status = 'human_requested';\n\nstaticData.leads[input.phone] = lead;\n\nlet history = staticData.conversations[input.phone] || [];\nhistory.push({role:'assistant', text:String(ai.reply || ''), at:new Date().toISOString()});\nhistory = history.slice(-12);\nstaticData.conversations[input.phone] = history;\n\nreturn [{json:{\n  phone:input.phone, phone_number_id:input.phone_number_id, lead,\n  reply:String(ai.reply || 'Thanks. Let me help you with that.'),\n  language:ai.language || lead.language || 'en',\n  human_requested:Boolean(ai.human_requested || lead.humanRequested),\n  ai_paused:Boolean(ai.ai_paused || lead.aiPaused),\n  lead_score:lead.leadScore, temperature:lead.temperature, raw_ai:ai\n}}];\n"
+      },
+      "id": "90ca1515-1cd7-46f5-b920-bb59692a7f24",
+      "name": "Save AI Lead Profile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer EAAZApEXLx9ZCcBSvYlZATN2RoaQqUD8vf4LSzElSYEKOzatkXOcQzsDzyEKZCPAZCDnFEoWmAzqI57UtOv3sj2qZBJWU4gZCr84wIq3nHcLZAH1IOhffm8FRsFqqkdWZAzEVZB4UvSiPkKZCyqVG8PnPhrtJl6bglzONZB6VBZBHx7J6F1EqOUBiZAldO5fLlZBcxpIbAuLF3XNOSayNA6RwIT4nKn4JhHzsDdrEXDxPiLgkU473Mcdq19CSlVbhZAe9sR50Pkw0ah7zbgPm1HyvTLtQazdLSr4ZD"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{\n{\n messaging_product: \"whatsapp\", recipient_type: \"individual\", to: $json.phone, type: \"text\", text: { body: $json.reply }\n}\n}}",
+        "options": {}
+      },
+      "id": "e306f337-106c-4b93-a336-5f751c614daf",
+      "name": "Send AI Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        1776
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dwKMEfap7fC41zIx",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.human_requested}}",
+              "operation": "isTrue"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "167e83c9-dedb-4900-b8ac-371db1aa250d",
+      "name": "Human Requested?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_CLOUD_API_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{\n{\n messaging_product: \"whatsapp\", recipient_type: \"individual\", to: $json.phone, type: \"text\", text: { body: \"A member of our property team will take over shortly. 👤\" }\n}\n}}",
+        "options": {}
+      },
+      "id": "d20fe954-f704-42ab-b2c8-92aec1725c26",
+      "name": "Human Handoff Notice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        2768
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "5473a8ec-c0b8-4351-b8fe-801129197bdb",
+              "leftValue": "={{ $json.lead.intent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "81dd93c6-a372-4027-bf74-3381b0b31107",
+              "leftValue": "={{ String($json.lead.area || '') + String($json.lead.bedrooms || '') + String($json.lead.budget || '') + String($json.lead.propertyType || '') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7870176c-b720-48eb-982c-3c29ba7dd2d1",
+      "name": "Search Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1936,
+        1632
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1psQkS0ABnN0YCr1YyHihXCiDW0vBzEGRArJVVhamXrE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1175841210,
+          "mode": "list",
+          "cachedResultName": "Real_Estate_Inventory_Google_Sheets_Template",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1psQkS0ABnN0YCr1YyHihXCiDW0vBzEGRArJVVhamXrE/edit#gid=1175841210"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "property_id",
+              "displayName": "property_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent",
+              "displayName": "intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "property_type",
+              "displayName": "property_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "bedrooms",
+              "displayName": "bedrooms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "bathrooms",
+              "displayName": "bathrooms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "area",
+              "displayName": "area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "community",
+              "displayName": "community",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ready_or_offplan",
+              "displayName": "ready_or_offplan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "furnished",
+              "displayName": "furnished",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payment_plan",
+              "displayName": "payment_plan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "photo_1",
+              "displayName": "photo_1",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "photo_2",
+              "displayName": "photo_2",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "photo_3",
+              "displayName": "photo_3",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "video_url",
+              "displayName": "video_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "floor_plan_url",
+              "displayName": "floor_plan_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "brochure_url",
+              "displayName": "brochure_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "latitude",
+              "displayName": "latitude",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "longitude",
+              "displayName": "longitude",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_email",
+              "displayName": "agent_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_calendar_email",
+              "displayName": "agent_calendar_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "4a675203-81e5-4721-a5af-773c9bc79e91",
+      "name": "Get Property Inventory",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2160,
+        1632
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "9gvKYEPRoWoTNZC2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Save AI Lead Profile').first().json.lead || {};\nconst rows = $input.all().map(i => i.json);\nconst norm=v=>String(v??'').trim().toLowerCase();\nconst num=v=>{if(v===null||v===undefined||v==='')return NaN;const n=Number(String(v).replace(/[^\\d.-]/g,''));return Number.isFinite(n)?n:NaN;};\nconst beds=v=>{const m=String(v??'').match(/\\d+/);return m?Number(m[0]):NaN;};\nconst intent=norm(lead.intent), type=norm(lead.propertyType), area=norm(lead.area), budget=num(lead.budget), wantedBeds=num(lead.bedrooms), wantedStatus=norm(lead.readyOrOffplan);\nfunction intentOK(r){const x=norm(r.intent);if(!intent)return true;if(!x)return false;if(intent==='buy')return x.includes('buy');if(intent==='rent')return x.includes('rent');return true;}\nfunction score(r){\n  if(!intentOK(r))return -999;\n  let s=0;\n  const ri=norm(r.intent),rt=norm(r.property_type),rc=norm(r.community),ra=norm(r.area),title=norm(r.title),rb=beds(r.bedrooms),price=num(r.price),ready=norm(r.ready_or_offplan),status=norm(r.status);\n  if(intent&&ri.includes(intent))s+=40;\n  if(type){if(rt===type||rt.includes(type)||type.includes(rt))s+=25;else if(title.includes(type))s+=10;}\n  if(area){if(rc===area||ra===area)s+=30;else if(rc.includes(area)||ra.includes(area)||title.includes(area))s+=18;}\n  if(Number.isFinite(wantedBeds)&&Number.isFinite(rb)){if(rb===wantedBeds)s+=25;else if(Math.abs(rb-wantedBeds)===1)s+=10;}\n  if(Number.isFinite(budget)&&Number.isFinite(price)){if(price<=budget)s+=25;else{const over=(price-budget)/Math.max(budget,1);if(over<=.10)s+=15;else if(over<=.20)s+=5;else s-=10;}}\n  if(wantedStatus&&ready&&(ready.includes(wantedStatus)||wantedStatus.includes(ready)))s+=15;\n  if(status&&!['available','active','for sale','for rent','ready'].some(x=>status.includes(x)))s-=50;\n  return s;\n}\nconst matches=rows.map(row=>({row,score:score(row)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,5);\nconst saved=$('Save AI Lead Profile').first().json;\nif(!matches.length){\n  return [{json:{phone:saved.phone,phone_number_id:saved.phone_number_id,property_count:0,no_match:true,property_message:\"I checked our current inventory but couldn't find a close match yet. If you share a little more about your preferred area, budget, or property type, I can narrow the search.\"}}];\n}\nreturn matches.map((m,index)=>{\n  const p=m.row;\n  const price=p.price!==undefined&&p.price!==''?`${p.currency||'AED'} ${p.price}`:'Price on request';\n  const body=`🏠 ${p.title||p.property_id||'Property'}\\n\\n`+\n    `💰 ${price}\\n`+\n    (p.community||p.area?`📍 ${p.community||p.area}\\n`:'')+\n    (p.bedrooms?`🛏 ${p.bedrooms} bedroom${String(p.bedrooms)==='1'?'':'s'}\\n`:'')+\n    (p.bathrooms?`🚿 ${p.bathrooms} bathroom${String(p.bathrooms)==='1'?'':'s'}\\n`:'')+\n    (p.ready_or_offplan?`🏗 ${p.ready_or_offplan}\\n`:'')+\n    (p.furnished?`🛋 ${p.furnished}\\n`:'')+\n    (p.payment_plan?`💳 ${p.payment_plan}\\n`:'')+\n    `\\n${p.description||''}`;\n  return {json:{\n    phone:saved.phone,phone_number_id:saved.phone_number_id,property_count:matches.length,\n    property_index:index+1,property_id:p.property_id||'',title:p.title||'',\n    price:p.price||'',currency:p.currency||'AED',area:p.area||'',community:p.community||'',\n    bedrooms:p.bedrooms||'',bathrooms:p.bathrooms||'',ready_or_offplan:p.ready_or_offplan||'',\n    furnished:p.furnished||'',payment_plan:p.payment_plan||'',description:p.description||'',\n    photo_1:p.photo_1||'',photo_2:p.photo_2||'',photo_3:p.photo_3||'',video_url:p.video_url||'',\n    floor_plan_url:p.floor_plan_url||'',brochure_url:p.brochure_url||'',latitude:p.latitude||'',longitude:p.longitude||'',\n    agent_name:p.agent_name||'',agent_email:p.agent_email||'',agent_calendar_email:p.agent_calendar_email||'',\n    property_message:body,_match_score:m.score\n  }};\n});"
+      },
+      "id": "66c4ad94-ac23-4033-bc5e-4bb080b2098c",
+      "name": "Rank Matching Properties",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        1632
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "48c52267-fa25-4a9c-a2ea-cad5a03dfd49",
+      "name": "Send Property Card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2832,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "f35d43fa-6ef9-4c44-83a9-868890570ead",
+      "name": "Send Property Photo 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        3280,
+        1616
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "1b1d786d-1032-4a20-9047-7c470545423e",
+      "name": "Photo 2 Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3504,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "9ddda309-8bad-447d-9c7e-3e0d521c6cc3",
+      "name": "Send Property Photo 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        3728,
+        1616
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "194cd1eb-7635-47ac-a1df-53bb00db3261",
+      "name": "Photo 3 Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3952,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "691be40c-701c-469a-8ac8-359da493b598",
+      "name": "Send Property Photo 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        4176,
+        1616
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5a2b09da-6d31-4d76-8c38-c8bd5afaab5d",
+      "name": "Video Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        4400,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "71009a06-e30c-44d5-9062-3a7e1b500956",
+      "name": "Send Property Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        4624,
+        1616
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "05dbc670-4ca8-42ef-aa26-c4465623e33b",
+      "name": "Floor Plan Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        4848,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "aca52080-fc6c-4f5b-8a35-a0132f279fec",
+      "name": "Send Floor Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        5072,
+        1616
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "71f91beb-d913-4c19-82a6-2c813fc87561",
+      "name": "Brochure Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        5296,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "caf385fb-6a47-4e2f-a679-2462f0917a23",
+      "name": "Send Brochure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        5520,
+        1616
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "eccef6c3-988f-4783-9113-366c00996282",
+      "name": "Location Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        5744,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "8ac24841-a66b-4260-9108-c513de94c985",
+      "name": "Send Property Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        5968,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "6331901c-9024-4bce-bdc4-1173e03db21e",
+      "name": "Send Property Buttons",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        6192,
+        1536
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b2b797eb-df26-4f5b-b804-f22092cbea31",
+      "name": "Property Matches Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2608,
+        1632
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "options": {}
+      },
+      "id": "5f805046-e5c0-47ff-af6e-d83a634ab66a",
+      "name": "Send No Match Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2832,
+        1728
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.photo_1}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cb1a9091-584c-442b-b5e2-4fecc06247a0",
+      "name": "Photo 1 Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3056,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.property_action}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5b2ac368-1a2e-4b3f-8f91-e7fd062bfc3f",
+      "name": "Route Property Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        688,
+        2064
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.property_action}}",
+                    "rightValue": "photos",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "4daf1ad7-74d7-41f8-b41d-bba8b8f6177a"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "photos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.property_action}}",
+                    "rightValue": "details",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "30e606f6-d4d2-497b-bfc4-128f657b5bbe"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "details"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.property_action}}",
+                    "rightValue": "viewing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "287d7934-b976-4571-8e10-a0536d295776"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "viewing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.property_action}}",
+                    "rightValue": "booking_select",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a71bb8dc-ba71-46dd-84c1-160a6d9ca740"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "booking_select"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "50816d82-0b6b-45fc-b8c6-565602b45623",
+      "name": "Property Action Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        976,
+        2320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "1psQkS0ABnN0YCr1YyHihXCiDW0vBzEGRArJVVhamXrE",
+          "mode": "id"
+        }
+      },
+      "id": "f33d14d2-d8f9-4deb-b6d9-f293291d55aa",
+      "name": "Lookup Selected Property",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1264,
+        2128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows=$input.all().map(i=>i.json); const id=String($('Prepare Conversation').first().json.property_id||''); const r=rows.find(x=>String(x.property_id||'')===id); if(!r) throw new Error('Property not found: '+id); return [{json:{...$('Prepare Conversation').first().json,...r,phone:$('Prepare Conversation').first().json.phone,phone_number_id:$('Prepare Conversation').first().json.phone_number_id}}];"
+      },
+      "id": "1e2123a2-8c4b-49eb-b24f-ee98e63cf359",
+      "name": "Select Requested Property",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        2128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_CLOUD_API_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ {messaging_product:'whatsapp',recipient_type:'individual',to:$json.phone,type:'text',text:{body:'🏠 '+($json.title||'Property')+'\\n\\n💰 '+($json.currency||'AED')+' '+($json.price||'')+'\\n📍 '+($json.community||$json.area||'')+'\\n🛏 '+($json.bedrooms||'N/A')+' bedrooms\\n🛁 '+($json.bathrooms||'N/A')+' bathrooms\\n🏗 '+($json.ready_or_offplan||'')+'\\n\\n'+($json.description||'')}} }}",
+        "options": {}
+      },
+      "id": "fbd9d9a3-7c9b-4e29-90d9-0bb88cfcb5c1",
+      "name": "Send Selected Property Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_CLOUD_API_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ {messaging_product:'whatsapp',recipient_type:'individual',to:$json.phone,type:'image',image:{link:$json.photo_1,caption:'📸 '+($json.title||'Property')}} }}",
+        "options": {}
+      },
+      "id": "f62990c9-5d84-4ff8-b6ba-8e7ec4f0c712",
+      "name": "Send Selected Property Photos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        2160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "1psQkS0ABnN0YCr1YyHihXCiDW0vBzEGRArJVVhamXrE",
+          "mode": "id"
+        }
+      },
+      "id": "3902c3cd-b932-4461-8629-21016a866fff",
+      "name": "Viewing - Load Property",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1264,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows=$input.all().map(i=>i.json); const base=$('Prepare Conversation').first().json; const r=rows.find(x=>String(x.property_id||'')===String(base.property_id||'')); if(!r) throw new Error('Viewing property not found'); return [{json:{...base,...r,phone:base.phone,phone_number_id:base.phone_number_id,viewing_requested:true}}];"
+      },
+      "id": "f0775f1c-f15a-4adb-a0dd-019fbd176fbf",
+      "name": "Viewing - Select Property",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{$json.agent_calendar_email || $json.agent_email}}",
+          "mode": "id"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "d7159738-1140-429e-b92d-652791de441a",
+      "name": "Viewing - Get Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1712,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$('Viewing - Select Property').first().json; const events=$input.all().map(i=>i.json); const now=new Date(); const slots=[]; function busy(s,e){return events.some(ev=>{const es=new Date(ev.start?.dateTime||ev.start?.date||0), ee=new Date(ev.end?.dateTime||ev.end?.date||0); return s<ee && e>es;});} for(let d=1;d<=7 && slots.length<5;d++){ for(const h of [10,12,14,16,18]){const s=new Date(now); s.setDate(now.getDate()+d); s.setHours(h,0,0,0); const e=new Date(s); e.setMinutes(30); if(!busy(s,e)) slots.push({start:s.toISOString(),end:e.toISOString(),label:s.toLocaleString('en-GB',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}); if(slots.length>=5) break;} } const data=$getWorkflowStaticData('global'); if(!data.pendingViewing) data.pendingViewing={}; data.pendingViewing[input.phone]={property:{...input},property_id:input.property_id,agent_calendar_email:input.agent_calendar_email||input.agent_email,slots,createdAt:new Date().toISOString()}; return [{json:{...input,available_slots:slots}}];"
+      },
+      "id": "27bb6db3-ff2e-4ddb-b061-2a231fed5bd4",
+      "name": "Viewing - Build Available Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_CLOUD_API_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ {messaging_product:'whatsapp',recipient_type:'individual',to:$json.phone,type:'text',text:{body:'📅 Available viewing times for '+($json.title||$json.property_id||'this property')+':\\n\\n'+($json.available_slots||[]).map((s,i)=>(i+1)+'. '+s.label).join('\\n')+'\\n\\nReply with 1, 2, 3, 4 or 5 to choose a time.'}} }}",
+        "options": {}
+      },
+      "id": "1eb45452-3454-41e4-97b6-8230b1afa114",
+      "name": "Viewing - Send Available Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j=$input.first().json; const n=Number(String(j.user_text||'').trim()); const slots=j.available_slots||[]; if(!Number.isInteger(n)||n<1||n>slots.length) return [{json:{...j,viewing_slot_selected:false}}]; const s=slots[n-1]; return [{json:{...j,viewing_slot_selected:true,selected_slot_start:s.start,selected_slot_end:s.end,selected_slot_label:s.label}}];"
+      },
+      "id": "53ccee9f-72a8-46ec-b4b1-31445a5b520c",
+      "name": "Viewing - Parse Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        2992
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "={{$json.agent_calendar_email || $json.agent_email}}",
+          "mode": "id"
+        },
+        "start": "={{$json.selected_slot_start}}",
+        "end": "={{$json.selected_slot_end}}",
+        "additionalFields": {
+          "description": "={{\"WhatsApp client: \"+$json.phone+\"\\nProperty: \"+($json.title||$json.property_id)}}",
+          "summary": "={{\"Property Viewing - \"+($json.title||$json.property_id)}}"
+        }
+      },
+      "id": "1bf18bb5-b7a1-43c7-ba05-ed02420549cf",
+      "name": "Viewing - Create Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1936,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_CLOUD_API_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ {messaging_product:'whatsapp',recipient_type:'individual',to:$json.phone,type:'text',text:{body:'✅ Your viewing is confirmed.\\n\\n🏠 '+($json.title||$json.property_id||'Property')+'\\n📅 '+($json.selected_slot_label||'Selected time')+'\\n\\nYour agent will assist you with the viewing.'}} }}",
+        "options": {}
+      },
+      "id": "d08fe654-7cc2-403b-8d4f-9aef85bc4f3d",
+      "name": "Viewing - Send Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j=$input.first().json; const lead={...(j.lead||{})}; let score=Number(lead.leadScore||0); const action=String(j.property_action||''); if(action==='viewing'||j.viewing_requested) score=Math.min(100,score+15); if(lead.budget&&lead.timeline) score=Math.min(100,score+5); if(lead.intent&&lead.propertyType) score=Math.min(100,score+3); lead.leadScore=score; lead.temperature=score>=80?'hot':score>=45?'warm':'cold'; lead.lastInteraction=new Date().toISOString(); if(score>=80) lead.status='hot'; const data=$getWorkflowStaticData('global'); data.leads[j.phone]={...(data.leads?.[j.phone]||{}),...lead}; return [{json:{...j,lead,lead_score:score,temperature:lead.temperature}}];"
+      },
+      "id": "fb99e47e-afef-498d-97c5-b80094f61a38",
+      "name": "Phase 6 - Update Lead Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "daafe11c-ff03-48da-abf6-41bf0929a9d6",
+      "name": "Follow-up Scheduler",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$getWorkflowStaticData('global'); const leads=Object.values(data.leads||{}); const now=Date.now(); const out=[]; for(const l of leads){if(l.aiPaused||l.status==='human_requested') continue; const last=new Date(l.lastUpdated||0).getTime(); const ageH=(now-last)/3600000; if(ageH>=24 && ageH<48 && !l.followup24Sent) out.push({...l,followupType:'24h'}); else if(ageH>=48 && !l.followup48Sent) out.push({...l,followupType:'48h'});} return out.map(x=>({json:x}));"
+      },
+      "id": "9dea239e-4d31-465a-b20b-481f4582964f",
+      "name": "Find Follow-up Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_CLOUD_API_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ {messaging_product:'whatsapp',recipient_type:'individual',to:$json.phone,type:'text',text:{body:$json.followupType==='24h'?'Just checking in — are you still looking for a property? I can help with more options.':'Would you still like help with your property search? I can arrange options or a viewing.'}} }}",
+        "options": {}
+      },
+      "id": "750cbf2d-c082-4ad1-a927-adda31f4e4a6",
+      "name": "Send Automatic Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        688,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$getWorkflowStaticData('global'); const l=data.leads?.[$json.phone]; if(l){if($json.followupType==='24h')l.followup24Sent=true; if($json.followupType==='48h')l.followup48Sent=true; l.lastUpdated=new Date().toISOString(); data.leads[$json.phone]=l;} return [{json:$json}];"
+      },
+      "id": "24304e0b-980b-4f85-8369-c1a42ad342fe",
+      "name": "Mark Follow-up Sent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$getWorkflowStaticData('global'); const j=$input.first().json; const lead={...(data.leads?.[j.phone]||j.lead||{})}; lead.status='human_requested'; lead.humanRequested=true; lead.aiPaused=true; lead.handoffAt=new Date().toISOString(); data.leads[j.phone]=lead; const q=Array.isArray(data.handoffQueue)?data.handoffQueue:[]; if(!q.some(x=>x.phone===j.phone)) q.push({phone:j.phone,name:lead.name,score:lead.leadScore,temperature:lead.temperature,property_id:j.property_id||'',at:lead.handoffAt}); data.handoffQueue=q.slice(-500); return [{json:{...j,lead,handoff_queue_size:data.handoffQueue.length}}];"
+      },
+      "id": "f39b9aaa-ae8b-4a2d-b47a-6f9f18247a2a",
+      "name": "Human Takeover - Lead Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/1235020516371904/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer EAAZApEXLx9ZCcBSvYlZATN2RoaQqUD8vf4LSzElSYEKOzatkXOcQzsDzyEKZCPAZCDnFEoWmAzqI57UtOv3sj2qZBJWU4gZCr84wIq3nHcLZAH1IOhffm8FRsFqqkdWZAzEVZB4UvSiPkKZCyqVG8PnPhrtJl6bglzONZB6VBZBHx7J6F1EqOUBiZAldO5fLlZBcxpIbAuLF3XNOSayNA6RwIT4nKn4JhHzsDdrEXDxPiLgkU473Mcdq19CSlVbhZAe9sR50Pkw0ah7zbgPm1HyvTLtQazdLSr4ZD"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{\n{\n  messaging_product: \"whatsapp\",\n  recipient_type: \"individual\",\n  to: $json.contacts[0].wa_id,\n  type: \"text\",\n  text: {\n    body: \"A member of our property team will take over shortly. 👤\"\n  }\n}\n}}",
+        "options": {}
+      },
+      "id": "e9a01ace-a57b-4e57-9dd3-5afb0771c778",
+      "name": "Human Takeover - Notice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        1968
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "dwKMEfap7fC41zIx",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## PHASE 4 - Configure media URLs\n\nAdd public HTTPS photo/video/floor-plan/brochure URLs to Google Sheets. Test each media node.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "954bf1e7-7cb5-447a-8b9a-78c239a99ab4",
+      "name": "PHASE 4 - Configure media URLs",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## PHASE 5 - Google Calendar\n\nSelect your Google Calendar OAuth credential on both calendar nodes. agent_calendar_email must contain the calendar email/ID.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "a8f21526-094c-4769-8190-4e2cbc87eee4",
+      "name": "PHASE 5 - Google Calendar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2736,
+        1936
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## PHASE 5 - Booking selection\n\nThe current build sends real free slots. The next execution step should store slots per phone and route the customer numeric selection back to Create Calendar Event.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "830238f5-786f-41d5-baf6-f459e851fe53",
+      "name": "PHASE 5 - Booking selection",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3136,
+        1952
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## PHASE 6 - Follow-ups\n\nSchedule Trigger runs every 6 hours and checks workflow staticData. For production scale, move lead state to a database.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "6cfb2bef-1f27-47ba-833c-5119b09f21b2",
+      "name": "PHASE 6 - Follow-ups",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        1904
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## PHASE 7 - Human takeover\n\nHuman handoff sets aiPaused=true and records the lead in the in-workflow handoff queue. Connect this queue to your CRM/Slack/email in the execution step.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "f0505710-9bec-447d-8d85-0e2eb3801b6b",
+      "name": "PHASE 7 - Human takeover",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3904,
+        1952
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## CREDENTIALS\n\nAfter import, select your working WhatsApp Cloud API credential/header, Gemini credential, Google Sheets credential, and Google Calendar OAuth credential. Never paste real access tokens into the workflow JSON.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "abceb2ec-43ad-499e-adca-3736dafc8c8c",
+      "name": "CREDENTIALS",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        656,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j=$input.first().json; const data=$getWorkflowStaticData('global'); const pending=data.pendingViewing?.[j.phone]; if(!pending) throw new Error('No pending viewing selection found for this WhatsApp number.'); const idx=Number(j.booking_selection||0)-1; const slot=pending.slots?.[idx]; if(!slot) throw new Error('Invalid viewing slot selection.'); return [{json:{...j,...pending.property,selected_slot_start:slot.start,selected_slot_end:slot.end,selected_slot_label:slot.label,agent_calendar_email:pending.agent_calendar_email}}];"
+      },
+      "id": "38e2758e-4b5f-40e5-9d75-3422e56e859b",
+      "name": "Viewing - Resolve Selected Slot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$getWorkflowStaticData('global'); const queue=Array.isArray(data.handoffQueue)?data.handoffQueue:[]; return queue.slice().reverse().map(x=>({json:x}));"
+      },
+      "id": "489c6251-24a5-49fa-a014-58ce61e2b337",
+      "name": "Human Handoff Queue (Internal)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## PHASE 5 BOOKING STATE\nViewing slots are stored per WhatsApp number in workflow staticData. A reply of 1-5 is routed to the stored slot and creates the Google Calendar event.",
+        "height": 180,
+        "width": 360
+      },
+      "id": "91d4b542-c570-4111-8431-9714a20c3d64",
+      "name": "PHASE 5 - Booking state",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2912,
+        2592
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Conversation": {
+      "main": [
+        [
+          {
+            "node": "Property Action Router",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route Property Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Qualification Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Qualification Agent": {
+      "main": [
+        [
+          {
+            "node": "Save AI Lead Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save AI Lead Profile": {
+      "main": [
+        [
+          {
+            "node": "Send AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send AI Reply": {
+      "main": [
+        [
+          {
+            "node": "Human Requested?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Requested?": {
+      "main": [
+        [
+          {
+            "node": "Human Takeover - Lead Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Ready?": {
+      "main": [
+        [
+          {
+            "node": "Get Property Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Property Inventory": {
+      "main": [
+        [
+          {
+            "node": "Rank Matching Properties",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank Matching Properties": {
+      "main": [
+        [
+          {
+            "node": "Property Matches Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Property Card": {
+      "main": [
+        [
+          {
+            "node": "Photo 1 Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Property Photo 1": {
+      "main": [
+        [
+          {
+            "node": "Photo 2 Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo 2 Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Property Photo 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Photo 3 Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Property Photo 2": {
+      "main": [
+        [
+          {
+            "node": "Photo 3 Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo 3 Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Property Photo 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Video Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Property Photo 3": {
+      "main": [
+        [
+          {
+            "node": "Video Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Property Video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Floor Plan Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Property Video": {
+      "main": [
+        [
+          {
+            "node": "Floor Plan Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Floor Plan Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Floor Plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Brochure Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Floor Plan": {
+      "main": [
+        [
+          {
+            "node": "Brochure Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brochure Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Brochure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Location Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Brochure": {
+      "main": [
+        [
+          {
+            "node": "Location Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Location Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Property Location",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Property Buttons",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Property Location": {
+      "main": [
+        [
+          {
+            "node": "Send Property Buttons",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Property Matches Found?": {
+      "main": [
+        [
+          {
+            "node": "Send Property Card",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send No Match Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo 1 Exists?": {
+      "main": [
+        [
+          {
+            "node": "Send Property Photo 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Photo 2 Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Property Action": {
+      "main": [
+        [
+          {
+            "node": "Property Action Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gemini Qualification Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Takeover - Lead Queue": {
+      "main": [
+        [
+          {
+            "node": "Human Takeover - Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Property Action Router": {
+      "main": [
+        [
+          {
+            "node": "Lookup Selected Property",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Selected Property",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Viewing - Load Property",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Viewing - Resolve Selected Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Selected Property": {
+      "main": [
+        [
+          {
+            "node": "Select Requested Property",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Requested Property": {
+      "main": [
+        [
+          {
+            "node": "Send Selected Property Details",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Selected Property Photos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Load Property": {
+      "main": [
+        [
+          {
+            "node": "Viewing - Select Property",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Select Property": {
+      "main": [
+        [
+          {
+            "node": "Viewing - Get Calendar Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Get Calendar Events": {
+      "main": [
+        [
+          {
+            "node": "Viewing - Build Available Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Build Available Slots": {
+      "main": [
+        [
+          {
+            "node": "Viewing - Send Available Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Viewing - Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Send Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Phase 6 - Update Lead Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Follow-up Scheduler": {
+      "main": [
+        [
+          {
+            "node": "Find Follow-up Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Follow-up Candidates": {
+      "main": [
+        [
+          {
+            "node": "Send Automatic Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Automatic Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Mark Follow-up Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Takeover - Notice": {
+      "main": [
+        [
+          {
+            "node": "Phase 6 - Update Lead Score",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Human Handoff Queue (Internal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Viewing - Resolve Selected Slot": {
+      "main": [
+        [
+          {
+            "node": "Viewing - Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6c2ed3b5-e3e1-4cd0-8183-7af78ff25835",
+  "meta": {
+    "instanceId": "6984cec24ef44f60fa4283fb306f67936521d1ce30aca9aa6d969b1a845def41"
+  },
+  "nodeGroups": [],
+  "id": "LP0OhKD5porQ8zYn",
+  "tags": []
+}
